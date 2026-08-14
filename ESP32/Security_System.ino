@@ -14,8 +14,8 @@
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // ================= WIFI =================
-const char* ssid = "Tae";
-const char* pass = "qqqqqqqq90qq90";
+const char* ssid = "";
+const char* pass = "";
 
 // ================= TIME =================
 const char* ntpServer = "pool.ntp.org";
