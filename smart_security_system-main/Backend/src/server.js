@@ -18,9 +18,10 @@ app.use(
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
       const allowed = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-      ];
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://intelliguard-nilqwnz7o-marieclairet.vercel.app",
+];
       if (allowed.includes(origin)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"));
     },
