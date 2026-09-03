@@ -7,37 +7,30 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// ===============================
+// =====================================================
+// TRUST RENDER'S PROXY
+// =====================================================
+app.set("trust proxy", 1);
+
+// =====================================================
 // CORS
-// ===============================
-const allowedOrigins = [
-  "https://intelliguard-seven.vercel.app",
-  "https://intelliguard-1.onrender.com",
-  "http://localhost:5173",
-  "http://localhost:3000"
-];
+// =====================================================
+// Allow the Vercel frontend and other clients.
+// We intentionally do NOT reject unknown origins.
+// This removes the previous "Not allowed by CORS" problem.
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests without an Origin header
-      // (Render health checks, Postman, etc.)
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      // Allow the Vercel frontend and local development
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      // TEMPORARY: allow other origins so deployment can work
-      console.log("[CORS] Allowing origin:", origin);
-      return callback(null, true);
-    },
-
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-
+    origin: true,
+    credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS"
+    ],
     allowedHeaders: [
       "Origin",
       "X-Requested-With",
@@ -45,25 +38,46 @@ app.use(
       "Accept",
       "Authorization"
     ],
-
-    credentials: true,
-
     optionsSuccessStatus: 204
   })
 );
 
-// Handle preflight requests
+// CORS preflight
 app.options("*", cors());
 
-// ===============================
+// =====================================================
 // BODY PARSING
-// ===============================
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// =====================================================
 
-// ===============================
+app.use(
+  express.json({
+    limit: "10mb"
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "10mb"
+  })
+);
+
+// =====================================================
+// REQUEST LOGGER
+// =====================================================
+
+app.use((req, res, next) => {
+  console.log(
+    `[REQUEST] ${req.method} ${req.originalUrl} | IP: ${req.ip}`
+  );
+
+  next();
+});
+
+// =====================================================
 // HEALTH CHECK
-// ===============================
+// =====================================================
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -75,15 +89,28 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
-    status: "healthy"
+    status: "healthy",
+    timestamp: new Date().toISOString()
   });
 });
 
-// ===============================
-// YOUR ROUTES
-// ===============================
+// =====================================================
+// API TEST
+// =====================================================
 
-// KEEP YOUR EXISTING ROUTE IMPORTS HERE.
+app.get("/api/test", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "INTELLIGUARD API is working"
+  });
+});
+
+// =====================================================
+// IMPORTANT
+// =====================================================
+// PUT YOUR EXISTING ROUTE IMPORTS HERE.
+//
+// DO NOT ADD A RATE LIMITER HERE.
 //
 // Example:
 //
@@ -92,11 +119,14 @@ app.get("/health", (req, res) => {
 //
 // app.use("/api/auth", authRoutes);
 // app.use("/api/event", eventRoutes);
+//
+// =====================================================
 
 
-// ===============================
+// =====================================================
 // 404 HANDLER
-// ===============================
+// =====================================================
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -104,9 +134,10 @@ app.use((req, res) => {
   });
 });
 
-// ===============================
+// =====================================================
 // ERROR HANDLER
-// ===============================
+// =====================================================
+
 app.use((err, req, res, next) => {
   console.error("[SERVER ERROR]", err);
 
@@ -116,12 +147,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ===============================
+// =====================================================
 // START SERVER
-// ===============================
+// =====================================================
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`=================================`);
-  console.log(`INTELLIGUARD BACKEND ONLINE`);
+  console.log("=================================");
+  console.log("INTELLIGUARD BACKEND ONLINE");
   console.log(`PORT: ${PORT}`);
-  console.log(`=================================`);
+  console.log("CORS: ENABLED");
+  console.log("RATE LIMITER: NOT ENABLED");
+  console.log("=================================");
 });
