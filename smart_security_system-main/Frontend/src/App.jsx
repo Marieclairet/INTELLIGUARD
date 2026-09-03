@@ -1,5 +1,5 @@
-```jsx
 /* eslint-disable react-hooks/set-state-in-effect */
+
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import Dashboard from "./Pages/Dashboard";
@@ -10,7 +10,8 @@ import { Routes, Route } from "react-router";
 import { AuthProvider } from "./useContext/userContext";
 import "./App.css";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL =
+  import.meta.env.VITE_API_URL || "https://intelliguard-1.onrender.com";
 
 function App() {
   const [event, setEvent] = useState(null);
@@ -22,7 +23,10 @@ function App() {
 
   const getCount = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_URL}/api/event/count`);
+      const res = await axios.get(
+        `${API_URL}/api/event/count`,
+      );
+
       setCountEvent(res.data);
     } catch (error) {
       console.log("[getCount]", error);
@@ -31,13 +35,18 @@ function App() {
 
   useEffect(() => {
     getCount();
+
     const interval = setInterval(getCount, 3000);
+
     return () => clearInterval(interval);
   }, [getCount]);
 
   const getEventLogs = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_URL}/api/event`);
+      const res = await axios.get(
+        `${API_URL}/api/event`,
+      );
+
       const data = res.data;
 
       setEvent(data);
@@ -57,7 +66,9 @@ function App() {
           );
         } else {
           setStatus("normal");
-          setMessage("All sensors clear — no threats detected");
+          setMessage(
+            "All sensors clear — no threats detected",
+          );
         }
       }
     } catch (error) {
@@ -67,7 +78,9 @@ function App() {
 
   useEffect(() => {
     getEventLogs();
+
     const interval = setInterval(getEventLogs, 3000);
+
     return () => clearInterval(interval);
   }, [getEventLogs]);
 
@@ -89,9 +102,15 @@ function App() {
             }
           />
 
-          <Route path="/change-code" element={<ChangeCode />} />
+          <Route
+            path="/change-code"
+            element={<ChangeCode />}
+          />
 
-          <Route path="/logs" element={<LogsPage />} />
+          <Route
+            path="/logs"
+            element={<LogsPage />}
+          />
         </Routes>
       </AuthProvider>
     </div>
@@ -99,4 +118,3 @@ function App() {
 }
 
 export default App;
-```
