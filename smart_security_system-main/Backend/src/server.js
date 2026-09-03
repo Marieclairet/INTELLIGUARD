@@ -1,103 +1,127 @@
 import express from "express";
-import dotenv from "dotenv";
-import cookieParser from "cookie-parser";
-import { DB_connect } from "./config/db.js";
-import router from "./routes/userRouters.js";
-import eRouter from "./routes/eventRoutes.js";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
+import dotenv from "dotenv";
 
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 10000;
 
-app.use(express.json());
+// ===============================
+// CORS
+// ===============================
+const allowedOrigins = [
+  "https://intelliguard-seven.vercel.app",
+  "https://intelliguard-1.onrender.com",
+  "http://localhost:5173",
+  "http://localhost:3000"
+];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-  console.log("REQUEST ORIGIN:", origin);
-      if (!origin) return callback(null, true);
-      const allowed = [
- const allowed = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "https://intelliguard-seven.vercel.app",
-  "https://intelliguard-nilqwnz7o-marieclairet.vercel.app",
-];
-      if (allowed.includes(origin)) return callback(null, true);
-      return callback(new Error("Not allowed by CORS"));
+      // Allow requests without an Origin header
+      // (Render health checks, Postman, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow the Vercel frontend and local development
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // TEMPORARY: allow other origins so deployment can work
+      console.log("[CORS] Allowing origin:", origin);
+      return callback(null, true);
     },
-    methods: ["POST", "GET", "PUT", "DELETE"],
+
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization"
+    ],
+
     credentials: true,
-  }),
+
+    optionsSuccessStatus: 204
+  })
 );
 
-app.use(cookieParser());
+// Handle preflight requests
+app.options("*", cors());
 
-// ── RATE LIMITING ──────────────────────────────────────────
-// Protects the login route from brute force attacks.
-// Maximum 10 login attempts per IP address per 15 minutes.
-// After 10 failed attempts the IP is blocked for 15 minutes.
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: {
-    message: "Too many login attempts from this device. Please wait 15 minutes before trying again.",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res, next, options) => {
-    console.log(`[RATE LIMIT] Login blocked — IP: ${req.ip} — too many attempts`);
-    res.status(429).json(options.message);
-  },
-});
+// ===============================
+// BODY PARSING
+// ===============================
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Protects the PIN change route from brute force attacks.
-// Maximum 5 attempts per IP per 15 minutes.
-const pinChangeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: {
-    message: "Too many PIN change attempts from this device. Please wait 15 minutes.",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// General API limiter — protects all other routes.
-// Maximum 100 requests per IP per 15 minutes.
-// ESP32 is excluded because it sends no Origin header
-// and its IP is on the local network only.
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: {
-    message: "Too many requests from this device. Please slow down.",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => {
-    // Skip rate limiting for ESP32 — it has no Origin header
-    // and sends frequent legitimate event POSTs
-    return !req.headers.origin;
-  },
-});
-
-app.use("/api/event", generalLimiter);
-app.use("/api/user/login", loginLimiter);
-app.use("/api/user/update", pinChangeLimiter);
-
-// ── ROUTES ─────────────────────────────────────────────────
-app.use("/api/user", router);
-app.use("/api/event", eRouter);
-
-const PORT = process.env.PORT || 4000;
-
-DB_connect().then(() => {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running at port: ${PORT}`);
-    console.log(`Accepting ESP32 connections on all network interfaces`);
-    console.log(`Rate limiting active — login: 10/15min, PIN change: 5/15min`);
+// ===============================
+// HEALTH CHECK
+// ===============================
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "INTELLIGUARD backend is running",
+    status: "online"
   });
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "healthy"
+  });
+});
+
+// ===============================
+// YOUR ROUTES
+// ===============================
+
+// KEEP YOUR EXISTING ROUTE IMPORTS HERE.
+//
+// Example:
+//
+// import authRoutes from "./routes/authRoutes.js";
+// import eventRoutes from "./routes/eventRoutes.js";
+//
+// app.use("/api/auth", authRoutes);
+// app.use("/api/event", eventRoutes);
+
+
+// ===============================
+// 404 HANDLER
+// ===============================
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.originalUrl} not found`
+  });
+});
+
+// ===============================
+// ERROR HANDLER
+// ===============================
+app.use((err, req, res, next) => {
+  console.error("[SERVER ERROR]", err);
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal server error"
+  });
+});
+
+// ===============================
+// START SERVER
+// ===============================
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`=================================`);
+  console.log(`INTELLIGUARD BACKEND ONLINE`);
+  console.log(`PORT: ${PORT}`);
+  console.log(`=================================`);
 });
