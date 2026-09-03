@@ -1,9 +1,11 @@
+```jsx
 /* eslint-disable react-refresh/only-export-components */
-const API_URL = import.meta.env.VITE_API_URL;
 import { useContext, createContext, useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import axios from "axios";
 import { useNavigate } from "react-router";
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 const AuthContext = createContext();
 
@@ -32,12 +34,14 @@ export const AuthProvider = ({ children }) => {
         "Sorry! PIN should not be empty. Enter the PIN to login",
       );
     }
+
     try {
       const res = await axios.post(
-        "http://localhost:4000/api/user/login",
+        `${API_URL}/api/user/login`,
         { pin },
         { withCredentials: true },
       );
+
       if (res?.status === 200) {
         setUser({
           ...res.data.safeUser,
@@ -56,12 +60,14 @@ export const AuthProvider = ({ children }) => {
 
   const handleLogout = async () => {
     if (!window.confirm("Are you sure you want to logout?")) return;
+
     try {
       await axios.post(
-        "http://localhost:4000/api/user/logout",
+        `${API_URL}/api/user/logout`,
         {},
         { withCredentials: true },
       );
+
       toast.success("Logged out successfully");
       setUser(null);
       localStorage.clear();
@@ -74,30 +80,36 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get("http://localhost:4000/api/user");
+        const res = await axios.get(`${API_URL}/api/user`);
         setPinId(res.data);
       } catch (error) {
         console.log("[fetchPinId]", error);
       }
     };
+
     fetchData();
   }, []);
 
   const handleUpdatePin = async () => {
     if (!window.confirm("Are you sure you want to change your PIN?")) return;
     if (!pinId) return toast.error("Something went wrong!");
+
     if (!currentPin.trim() || !newPin.trim() || !confirmedPin.trim()) {
       return toast.error("All fields are required!");
     }
+
     if (newPin !== confirmedPin) {
       return toast.error("Confirm your new Pin correctly!");
     }
+
     setIsSaving(true);
+
     try {
       const res = await axios.put(
-        `http://localhost:4000/api/user/update/${pinId.getPin._id}`,
+        `${API_URL}/api/user/update/${pinId.getPin._id}`,
         { currentPin, confirmedPin },
       );
+
       if (res.status === 200) {
         toast.success("PIN has been changed successfully!");
         setCurrentPin("");
@@ -109,9 +121,13 @@ export const AuthProvider = ({ children }) => {
       if (error.response?.status === 400) {
         return toast.error("Sorry, user not found!");
       }
+
       if (error.response?.status === 401) {
-        return toast.error("Sorry, your current PIN is wrong. Try again!");
+        return toast.error(
+          "Sorry, your current PIN is wrong. Try again!",
+        );
       }
+
       if (error.response?.status === 404) {
         return toast.error("PIN has failed to update!");
       }
@@ -124,10 +140,11 @@ export const AuthProvider = ({ children }) => {
     const checkRefresh = async () => {
       try {
         const res = await axios.post(
-          "http://localhost:4000/api/user/refresh_token",
+          `${API_URL}/api/user/refresh_token`,
           {},
           { withCredentials: true },
         );
+
         if (res.data.accessToken) {
           setUser({
             ...res.data.safeUser,
@@ -138,6 +155,7 @@ export const AuthProvider = ({ children }) => {
         console.log("[refreshToken]", error);
       }
     };
+
     checkRefresh();
   }, []);
 
@@ -163,3 +181,4 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+```
