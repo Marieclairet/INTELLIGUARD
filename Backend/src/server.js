@@ -20,9 +20,9 @@ app.use(
       const allowed = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://intelligaurd.vercel.app",
       ];
-      if (allowed.includes(origin)) return callback(null, true);
-      return callback(new Error("Not allowed by CORS"));
+      return callback(null, allowed.includes(origin));
     },
     methods: ["POST", "GET", "PUT", "DELETE"],
     credentials: true,
@@ -39,12 +39,15 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: {
-    message: "Too many login attempts from this device. Please wait 15 minutes before trying again.",
+    message:
+      "Too many login attempts from this device. Please wait 15 minutes before trying again.",
   },
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res, next, options) => {
-    console.log(`[RATE LIMIT] Login blocked — IP: ${req.ip} — too many attempts`);
+    console.log(
+      `[RATE LIMIT] Login blocked — IP: ${req.ip} — too many attempts`,
+    );
     res.status(429).json(options.message);
   },
 });
@@ -55,7 +58,8 @@ const pinChangeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: {
-    message: "Too many PIN change attempts from this device. Please wait 15 minutes.",
+    message:
+      "Too many PIN change attempts from this device. Please wait 15 minutes.",
   },
   standardHeaders: true,
   legacyHeaders: false,
