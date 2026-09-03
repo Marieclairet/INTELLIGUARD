@@ -1,3 +1,4 @@
+```jsx
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
@@ -9,6 +10,8 @@ import { Routes, Route } from "react-router";
 import { AuthProvider } from "./useContext/userContext";
 import "./App.css";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 function App() {
   const [event, setEvent] = useState(null);
   const [status, setStatus] = useState("normal");
@@ -16,7 +19,7 @@ function App() {
     "All sensors clear — no threats detected",
   );
   const [countEvent, setCountEvent] = useState({ count: 0 });
-const API_URL = import.meta.env.VITE_API_URL;
+
   const getCount = useCallback(async () => {
     try {
       const res = await axios.get(`${API_URL}/api/event/count`);
@@ -36,16 +39,22 @@ const API_URL = import.meta.env.VITE_API_URL;
     try {
       const res = await axios.get(`${API_URL}/api/event`);
       const data = res.data;
+
       setEvent(data);
 
       if (data.length > 0) {
         const latest = data[0];
+
         if (latest.type === "warn") {
           setStatus("suspicious");
-          setMessage("Motion or access attempt detected — monitoring elevated");
+          setMessage(
+            "Motion or access attempt detected — monitoring elevated",
+          );
         } else if (latest.type === "danger") {
           setStatus("intrution");
-          setMessage("Unauthorised access confirmed — immediate action required");
+          setMessage(
+            "Unauthorised access confirmed — immediate action required",
+          );
         } else {
           setStatus("normal");
           setMessage("All sensors clear — no threats detected");
@@ -63,10 +72,11 @@ const API_URL = import.meta.env.VITE_API_URL;
   }, [getEventLogs]);
 
   return (
-    <div >
+    <div>
       <AuthProvider>
         <Routes>
           <Route path="/" element={<LoginPage />} />
+
           <Route
             path="/dashboard"
             element={
@@ -78,7 +88,9 @@ const API_URL = import.meta.env.VITE_API_URL;
               />
             }
           />
+
           <Route path="/change-code" element={<ChangeCode />} />
+
           <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </AuthProvider>
@@ -87,3 +99,4 @@ const API_URL = import.meta.env.VITE_API_URL;
 }
 
 export default App;
+```
