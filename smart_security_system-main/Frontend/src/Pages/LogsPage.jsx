@@ -1,3 +1,4 @@
+```jsx
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router";
@@ -6,6 +7,8 @@ import LogPageHeader from "../Components/LogPageHeader";
 import LogPageTabSwitch from "../Components/LogPageTabSwitch";
 import DatabaseLogs from "../Components/DatabaseLogs";
 import SdCardLogs from "../Components/SdCardLogs";
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 const LogsPage = () => {
   const { user } = useAuth();
@@ -21,7 +24,6 @@ const LogsPage = () => {
   const [search, setSearch] = useState("");
 
   // ── SD CARD STATE ──
-
   const [sdLogs, setSdLogs] = useState([]);
 
   // ── AUTH GUARD ──
@@ -34,11 +36,13 @@ const LogsPage = () => {
   // ── FETCH DATABASE LOGS ──
   const fetchLogs = useCallback(async () => {
     setLoading(true);
+
     try {
       const url =
         filter === "all"
-          ? "http://localhost:4000/api/event/logs"
-          : `http://localhost:4000/api/event/logs?type=${filter}`;
+          ? `${API_URL}/api/event/logs`
+          : `${API_URL}/api/event/logs?type=${filter}`;
+
       const res = await axios.get(url);
       setLogs(res.data);
     } catch (error) {
@@ -71,12 +75,15 @@ const LogsPage = () => {
         search={search}
         filteredLogs={filteredLogs}
       />
+
       {/* CONTENT */}
       <div className="max-w-5xl mx-auto px-4 pt-24 pb-8">
-        <LogPageTabSwitch setActiveTab={setActiveTab} activeTab={activeTab} />
-        {/* 
-            DATABASE LOGS TAB
-        */}
+        <LogPageTabSwitch
+          setActiveTab={setActiveTab}
+          activeTab={activeTab}
+        />
+
+        {/* DATABASE LOGS TAB */}
         {activeTab === "database" && (
           <DatabaseLogs
             setSearch={setSearch}
@@ -89,9 +96,7 @@ const LogsPage = () => {
           />
         )}
 
-        {/*
-            SD CARD LOGS TAB
-         */}
+        {/* SD CARD LOGS TAB */}
         {activeTab === "sdcard" && (
           <SdCardLogs setSdLogs={setSdLogs} sdLogs={sdLogs} />
         )}
@@ -101,3 +106,4 @@ const LogsPage = () => {
 };
 
 export default LogsPage;
+```
