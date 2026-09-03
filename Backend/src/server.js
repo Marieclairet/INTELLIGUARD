@@ -84,7 +84,20 @@ const generalLimiter = rateLimit({
   },
 });
 
-app.use("/api/event", generalLimiter);
+const eventPollLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60, // generous — covers 3s polling from several tabs/users at once
+  message: {
+    message: "Too many requests. Please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    return !req.headers.origin; // still skip for ESP32
+  },
+});
+
+app.use("/api/event", eventPollLimiter);
 app.use("/api/user/login", loginLimiter);
 app.use("/api/user/update", pinChangeLimiter);
 
