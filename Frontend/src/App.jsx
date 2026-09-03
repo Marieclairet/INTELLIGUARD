@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
@@ -16,10 +17,11 @@ function App() {
     "All sensors clear — no threats detected",
   );
   const [countEvent, setCountEvent] = useState({ count: 0 });
+  const API_URL = import.meta.env.VITE_API_URL;
 
   const getCount = useCallback(async () => {
     try {
-      const res = await axios.get("http://localhost:4000/api/event/count");
+      const res = await axios.get(`${API_URL}/api/event/count`);
       setCountEvent(res.data);
     } catch (error) {
       console.log("[getCount]", error);
@@ -34,7 +36,7 @@ function App() {
 
   const getEventLogs = useCallback(async () => {
     try {
-      const res = await axios.get("http://localhost:4000/api/event");
+      const res = await axios.get(`${API_URL}/api/event`);
       const data = res.data;
       setEvent(data);
 

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useState } from "react";
 import { MdInsertDriveFile, MdDelete, MdRefresh } from "react-icons/md";
 import axios from "axios";
@@ -14,14 +15,14 @@ const LogPageHeader = ({
   const [logs, setLogs] = useState([]);
 
   const navigate = useNavigate();
-
+const API_URL = import.meta.env.VITE_API_URL;
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
       const url =
         filter === "all"
-          ? "http://localhost:4000/api/event/logs"
-          : `http://localhost:4000/api/event/logs?type=${filter}`;
+          ? `${API_URL}/api/event/logs`
+          : `${API_URL}/api/event/logs?type=${filter}`;
       const res = await axios.get(url);
       setLogs(res.data);
     } catch (error) {
@@ -40,7 +41,7 @@ const LogPageHeader = ({
       return;
     setClearing(true);
     try {
-      await axios.delete("http://localhost:4000/api/event/logs");
+      await axios.delete(`${API_URL}/api/event/logs`);
       setLogs([]);
     } catch (error) {
       console.log("[clearLogs]", error);

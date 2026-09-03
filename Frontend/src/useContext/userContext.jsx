@@ -6,6 +6,8 @@ import { useNavigate } from "react-router";
 
 const AuthContext = createContext();
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
@@ -33,7 +35,7 @@ export const AuthProvider = ({ children }) => {
     }
     try {
       const res = await axios.post(
-        "http://localhost:4000/api/user/login",
+        `${API_URL}/api/user/login`,
         { pin },
         { withCredentials: true },
       );
@@ -57,7 +59,7 @@ export const AuthProvider = ({ children }) => {
     if (!window.confirm("Are you sure you want to logout?")) return;
     try {
       await axios.post(
-        "http://localhost:4000/api/user/logout",
+        `${API_URL}/api/user/logout`,
         {},
         { withCredentials: true },
       );
@@ -73,7 +75,8 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get("http://localhost:4000/api/user");
+        const res = await axios.get(`${API_URL}/api/user`
+        );
         setPinId(res.data);
       } catch (error) {
         console.log("[fetchPinId]", error);
@@ -94,7 +97,7 @@ export const AuthProvider = ({ children }) => {
     setIsSaving(true);
     try {
       const res = await axios.put(
-        `http://localhost:4000/api/user/update/${pinId.getPin._id}`,
+        `${API_URL}/api/user/update/${pinId.getPin._id}`,
         { currentPin, confirmedPin },
       );
       if (res.status === 200) {
@@ -123,7 +126,7 @@ export const AuthProvider = ({ children }) => {
     const checkRefresh = async () => {
       try {
         const res = await axios.post(
-          "http://localhost:4000/api/user/refresh_token",
+          `${API_URL}/api/user/refresh_token`,
           {},
           { withCredentials: true },
         );

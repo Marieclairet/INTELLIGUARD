@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router";
@@ -10,7 +11,7 @@ import SdCardLogs from "../Components/SdCardLogs";
 const LogsPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-
+const API_URL = import.meta.env.VITE_API_URL;
   // ── TAB STATE ──
   const [activeTab, setActiveTab] = useState("database");
 
@@ -37,8 +38,8 @@ const LogsPage = () => {
     try {
       const url =
         filter === "all"
-          ? "http://localhost:4000/api/event/logs"
-          : `http://localhost:4000/api/event/logs?type=${filter}`;
+          ? `${API_URL}/api/event/logs`
+          : `${API_URL}/api/event/logs?type=${filter}`;
       const res = await axios.get(url);
       setLogs(res.data);
     } catch (error) {
