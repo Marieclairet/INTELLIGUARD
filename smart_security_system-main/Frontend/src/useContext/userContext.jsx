@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
+const API_URL = import.meta.env.VITE_API_URL;
 import { useContext, createContext, useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import axios from "axios";
