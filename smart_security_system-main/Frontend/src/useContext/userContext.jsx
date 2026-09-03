@@ -1,4 +1,3 @@
-```jsx
 /* eslint-disable react-refresh/only-export-components */
 
 import { useContext, createContext, useState, useEffect } from "react";
@@ -16,7 +15,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [pin, setPin] = useState("");
   const [user, setUser] = useState(
-    JSON.parse(localStorage.getItem("userData")) || null,
+    JSON.parse(localStorage.getItem("userData")) || null
   );
   const [currentPin, setCurrentPin] = useState("");
   const [newPin, setNewPin] = useState("");
@@ -33,7 +32,7 @@ export const AuthProvider = ({ children }) => {
   const handleLogin = async () => {
     if (!pin.trim()) {
       return toast.error(
-        "Sorry! PIN should not be empty. Enter the PIN to login",
+        "Sorry! PIN should not be empty. Enter the PIN to login"
       );
     }
 
@@ -41,7 +40,7 @@ export const AuthProvider = ({ children }) => {
       const res = await axios.post(
         `${API_URL}/api/user/login`,
         { pin },
-        { withCredentials: true },
+        { withCredentials: true }
       );
 
       if (res?.status === 200) {
@@ -69,7 +68,7 @@ export const AuthProvider = ({ children }) => {
       await axios.post(
         `${API_URL}/api/user/logout`,
         {},
-        { withCredentials: true },
+        { withCredentials: true }
       );
 
       toast.success("Logged out successfully");
@@ -117,7 +116,7 @@ export const AuthProvider = ({ children }) => {
         {
           currentPin,
           confirmedPin,
-        },
+        }
       );
 
       if (res.status === 200) {
@@ -136,7 +135,7 @@ export const AuthProvider = ({ children }) => {
 
       if (error.response?.status === 401) {
         return toast.error(
-          "Sorry, your current PIN is wrong. Try again!",
+          "Sorry, your current PIN is wrong. Try again!"
         );
       }
 
@@ -156,7 +155,7 @@ export const AuthProvider = ({ children }) => {
         const res = await axios.post(
           `${API_URL}/api/user/refresh_token`,
           {},
-          { withCredentials: true },
+          { withCredentials: true }
         );
 
         if (res.data.accessToken) {
@@ -195,4 +194,3 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-```
