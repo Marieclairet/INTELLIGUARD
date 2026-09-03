@@ -1,11 +1,13 @@
 ```jsx
 /* eslint-disable react-refresh/only-export-components */
+
 import { useContext, createContext, useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import axios from "axios";
 import { useNavigate } from "react-router";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL =
+  import.meta.env.VITE_API_URL || "https://intelliguard-1.onrender.com";
 
 const AuthContext = createContext();
 
@@ -47,6 +49,7 @@ export const AuthProvider = ({ children }) => {
           ...res.data.safeUser,
           accessToken: res.data.accessToken,
         });
+
         navigate("/dashboard");
         setPin("");
       }
@@ -54,6 +57,7 @@ export const AuthProvider = ({ children }) => {
       if (error.response?.status === 400) {
         toast.error("User not found or Incorrect PIN");
       }
+
       console.log({ error });
     }
   };
@@ -92,7 +96,10 @@ export const AuthProvider = ({ children }) => {
 
   const handleUpdatePin = async () => {
     if (!window.confirm("Are you sure you want to change your PIN?")) return;
-    if (!pinId) return toast.error("Something went wrong!");
+
+    if (!pinId) {
+      return toast.error("Something went wrong!");
+    }
 
     if (!currentPin.trim() || !newPin.trim() || !confirmedPin.trim()) {
       return toast.error("All fields are required!");
@@ -107,14 +114,19 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await axios.put(
         `${API_URL}/api/user/update/${pinId.getPin._id}`,
-        { currentPin, confirmedPin },
+        {
+          currentPin,
+          confirmedPin,
+        },
       );
 
       if (res.status === 200) {
         toast.success("PIN has been changed successfully!");
+
         setCurrentPin("");
         setNewPin("");
         setConfirmedPin("");
+
         navigate("/");
       }
     } catch (error) {
@@ -131,6 +143,8 @@ export const AuthProvider = ({ children }) => {
       if (error.response?.status === 404) {
         return toast.error("PIN has failed to update!");
       }
+
+      console.log("[handleUpdatePin]", error);
     } finally {
       setIsSaving(false);
     }
