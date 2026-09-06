@@ -8,26 +8,26 @@ const SystemActions = ({ event, status }) => {
   const sensorRows = [
     {
       label: "PIR MOTION",
-      values: { normal: "No motion", suspicious: "Motion detected", intrution: "Triggered" },
+      values: { normal: "No motion", suspicious: "Motion detected", intrusion: "Triggered" },
     },
     {
       label: "ENTRY POINT",
-      values: { normal: "Secured", suspicious: "Activity detected", intrution: "Breach detected" },
+      values: { normal: "Secured", suspicious: "Activity detected", intrusion: "Breach detected" },
     },
     {
       label: "TAMPER SW",
-      values: { normal: "Enclosure secure", suspicious: "Enclosure secure", intrution: "Enclosure opened" },
+      values: { normal: "Enclosure secure", suspicious: "Enclosure secure", intrusion: "Enclosure opened" },
     },
     {
       label: "NETWORK",
-      values: { normal: "Online", suspicious: "Online", intrution: "Online — alerting" },
+      values: { normal: "Online", suspicious: "Online", intrusion: "Online — alerting" },
     },
   ];
 
   const statusColor = {
     normal: "#00C896",
     suspicious: "#F59E0B",
-    intrution: "#EF4444",
+    intrusion: "#EF4444",
   };
 
   const col = statusColor[status] || "#00D4FF";
