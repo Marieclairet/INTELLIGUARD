@@ -75,8 +75,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/user`
-        );
+        const res = await axios.get(`${API_URL}/api/user`);
         setPinId(res.data);
       } catch (error) {
         console.log("[fetchPinId]", error);
@@ -99,6 +98,7 @@ export const AuthProvider = ({ children }) => {
       const res = await axios.put(
         `${API_URL}/api/user/update/${pinId.getPin._id}`,
         { currentPin, confirmedPin },
+        { withCredentials: true },
       );
       if (res.status === 200) {
         toast.success("PIN has been changed successfully!");
