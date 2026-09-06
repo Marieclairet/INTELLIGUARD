@@ -19,7 +19,7 @@ const Status = ({ status, message }) => {
       border: "#F59E0B30",
       icon: <TbAlertTriangle size={36} />,
     },
-    intrution: {
+    intrusion: {
       label: "INTRUSION DETECTED",
       desc: "Unauthorised access confirmed — immediate action required",
       color: "#EF4444",
