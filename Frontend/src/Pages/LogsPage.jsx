@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router";
 import { useAuth } from "../useContext/userContext";
@@ -11,7 +11,8 @@ import SdCardLogs from "../Components/SdCardLogs";
 const LogsPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-const API_URL = import.meta.env.VITE_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL;
+
   // ── TAB STATE ──
   const [activeTab, setActiveTab] = useState("database");
 
@@ -20,10 +21,15 @@ const API_URL = import.meta.env.VITE_API_URL;
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [clearing, setClearing] = useState(false);
 
   // ── SD CARD STATE ──
-
   const [sdLogs, setSdLogs] = useState([]);
+
+  // Tracks whether this is the very first fetch for the current
+  // tab/filter combo, so the spinner only shows on first load —
+  // background polling refreshes silently without flicker.
+  const isFirstLoad = useRef(true);
 
   // ── AUTH GUARD ──
   useEffect(() => {
@@ -33,8 +39,11 @@ const API_URL = import.meta.env.VITE_API_URL;
   }, [user, navigate]);
 
   // ── FETCH DATABASE LOGS ──
+  // This is the single source of truth for "logs" — LogPageHeader no
+  // longer keeps its own copy, so the CLEAR button and record counts
+  // always reflect what's actually loaded here.
   const fetchLogs = useCallback(async () => {
-    setLoading(true);
+    if (isFirstLoad.current) setLoading(true);
     try {
       const url =
         filter === "all"
@@ -46,15 +55,41 @@ const API_URL = import.meta.env.VITE_API_URL;
       console.log("[fetchLogs]", error);
     } finally {
       setLoading(false);
+      isFirstLoad.current = false;
     }
   }, [filter]);
 
+  // Fetch immediately when the database tab is opened or the filter
+  // changes, then poll every 3s while the tab stays active — same
+  // pattern App.jsx already uses for the Dashboard.
   useEffect(() => {
-    if (activeTab === "database") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchLogs();
-    }
+    if (activeTab !== "database") return;
+
+    isFirstLoad.current = true;
+    fetchLogs();
+
+    const interval = setInterval(fetchLogs, 3000);
+    return () => clearInterval(interval);
   }, [activeTab, fetchLogs]);
+
+  // ── CLEAR LOGS ──
+  const handleClearLogs = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Permanently delete all database logs? This cannot be undone.",
+      )
+    )
+      return;
+    setClearing(true);
+    try {
+      await axios.delete(`${API_URL}/api/event/logs`);
+      setLogs([]);
+    } catch (error) {
+      console.log("[clearLogs]", error);
+    } finally {
+      setClearing(false);
+    }
+  }, [API_URL]);
 
   const filteredLogs = logs.filter((log) =>
     log.message.toLowerCase().includes(search.toLowerCase()),
@@ -65,12 +100,12 @@ const API_URL = import.meta.env.VITE_API_URL;
       {/* ── HEADER ── */}
       <LogPageHeader
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
         sdLogs={sdLogs}
-        filter={filter}
-        setLoading={setLoading}
-        search={search}
         filteredLogs={filteredLogs}
+        logs={logs}
+        onRefresh={fetchLogs}
+        onClear={handleClearLogs}
+        clearing={clearing}
       />
       {/* CONTENT */}
       <div className="max-w-5xl mx-auto px-4 pt-24 pb-8">
