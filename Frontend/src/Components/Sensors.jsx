@@ -15,13 +15,13 @@ const Sensors = ({ status }) => {
     {
       label: "RED",
       sub: "Alert",
-      active: status === "intrution",
+      active: status === "intrusion",
       color: "#EF4444",
     },
     {
       label: "BUZZER",
       sub: "Alarm",
-      active: status === "intrution",
+      active: status === "intrusion",
       color: "#EF4444",
     },
   ];
