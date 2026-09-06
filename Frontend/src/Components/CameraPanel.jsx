@@ -9,12 +9,12 @@ const CameraPanel = ({ status }) => {
   const [streamError, setStreamError] = useState(false);
   const [streamLoaded, setStreamLoaded] = useState(false);
 
-  const motionActive = status === "suspicious" || status === "intrution";
+  const motionActive = status === "suspicious" || status === "intrusion";
 
   const borderColor = {
     normal: "#0F2644",
     suspicious: "#F59E0B",
-    intrution: "#EF4444",
+    intrusion: "#EF4444",
   };
 
   const border = borderColor[status] || "#0F2644";
@@ -184,7 +184,7 @@ const CameraPanel = ({ status }) => {
           >
             STREAM: {STREAM_URL}
           </span>
-          
+
           <a
             href={CAMERA_URL}
             target="_blank"
