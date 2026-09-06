@@ -46,7 +46,7 @@ function App() {
           setStatus("suspicious");
           setMessage("Motion or access attempt detected — monitoring elevated");
         } else if (latest.type === "danger") {
-          setStatus("intrution");
+          setStatus("intrusion");
           setMessage("Unauthorised access confirmed — immediate action required");
         } else {
           setStatus("normal");
