@@ -1,14 +1,13 @@
 import axios from "axios";
-import { useCallback, useState, useEffect } from "react";
-import { MdSdCard, MdInfoOutline, MdEdit, MdCheck } from "react-icons/md";
+import { useCallback, useState } from "react";
+import { MdSdCard, MdInfoOutline } from "react-icons/md";
 
-const IP_STORAGE_KEY = "intelliguard_sd_ip";
-const DEFAULT_IP = "http://192.168.148.132:4001";
+const API_URL = import.meta.env.VITE_API_URL;
 
 const MODE_INFO = {
   decrypted:
-    "The same on-device log data after XOR decryption using key INTELLIGUARD. This is the human-readable version of the encrypted log — both views come directly from the ESP32 (SD card if present, otherwise its internal LittleFS black-box).",
-  raw: "The exact data stored on the ESP32 — XOR encrypted with key INTELLIGUARD. Each entry is a hexadecimal string; without the key it's unreadable. This proves security events aren't stored in plaintext on the hardware.",
+    "The same black-box log data after XOR decryption using key INTELLIGUARD. This is the human-readable version — synced from the ESP32's SD card or LittleFS black-box whenever it has a WiFi connection.",
+  raw: "The exact data as stored on the ESP32 — XOR encrypted with key INTELLIGUARD. Each entry is a hexadecimal string; without the key it's unreadable. This proves security events aren't stored in plaintext on the hardware.",
 };
 
 const SdCardLogs = ({ setSdLogs, sdLogs }) => {
@@ -18,101 +17,25 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
   const [sdLoaded, setSdLoaded] = useState(false);
   const [hoveredInfo, setHoveredInfo] = useState(null);
 
-  const [sdIp, setSdIp] = useState(
-    () => localStorage.getItem(IP_STORAGE_KEY) || DEFAULT_IP,
-  );
-  const [editingIp, setEditingIp] = useState(false);
-  const [ipDraft, setIpDraft] = useState(sdIp);
-
-  useEffect(() => {
-    localStorage.setItem(IP_STORAGE_KEY, sdIp);
-  }, [sdIp]);
-
-  const saveIp = () => {
-    let val = ipDraft.trim();
-    if (val && !val.startsWith("http")) val = "http://" + val;
-    if (val) setSdIp(val);
-    setEditingIp(false);
-  };
-
-  const fetchSDLogs = useCallback(
-    async (mode) => {
-      setSdLoading(true);
-      setSdError(null);
-      setSdLogs([]);
-      try {
-        const res = await axios.get(
-          `${sdIp}/sdlog?mode=${mode === "raw" ? "raw" : "decrypted"}`,
-          { timeout: 10000 },
-        );
-        setSdLogs(res.data);
-        setSdLoaded(true);
-      } catch (error) {
-        setSdError(
-          "Could not reach the ESP32 log server. Check that the ESP32 is powered, on the same network, and that the IP address below is correct — it changes whenever the WiFi network changes.",
-        );
-        console.log("[fetchSDLogs]", error);
-      } finally {
-        setSdLoading(false);
-      }
-    },
-    [setSdLogs, sdIp],
-  );
+  const fetchSDLogs = useCallback(async () => {
+    setSdLoading(true);
+    setSdError(null);
+    try {
+      const res = await axios.get(`${API_URL}/api/blackbox`);
+      setSdLogs(res.data);
+      setSdLoaded(true);
+    } catch (error) {
+      setSdError(
+        "Could not reach the cloud black-box log. The ESP32 syncs this whenever it has WiFi — if it's been offline a while, entries may not have synced yet.",
+      );
+      console.log("[fetchSDLogs]", error);
+    } finally {
+      setSdLoading(false);
+    }
+  }, [setSdLogs]);
 
   return (
     <div>
-      {/* IP address (editable — this changes whenever the ESP32 joins a new WiFi network) */}
-      <div className="flex items-center gap-2 mb-3">
-        <MdSdCard size={13} style={{ color: "#E8EDF230" }} />
-        {editingIp ? (
-          <>
-            <input
-              autoFocus
-              value={ipDraft}
-              onChange={(e) => setIpDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && saveIp()}
-              placeholder="http://192.168.x.x:4001"
-              className="font-mono-ig text-xs px-2 py-1 rounded-sm flex-1 max-w-xs"
-              style={{
-                backgroundColor: "#0A1628",
-                border: "1px solid #00D4FF40",
-                color: "#E8EDF2",
-                outline: "none",
-              }}
-            />
-            <button
-              onClick={saveIp}
-              className="p-1 rounded-sm"
-              style={{ color: "#00C896" }}
-            >
-              <MdCheck size={15} />
-            </button>
-          </>
-        ) : (
-          <>
-            <span
-              className="font-mono-ig text-xs"
-              style={{ color: "#E8EDF230" }}
-            >
-              ESP32 · {sdIp}
-            </span>
-            <button
-              onClick={() => {
-                setIpDraft(sdIp);
-                setEditingIp(true);
-              }}
-              className="p-0.5 rounded-sm"
-              style={{ color: "#E8EDF230" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#00D4FF")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#E8EDF230")}
-              title="Edit ESP32 IP address"
-            >
-              <MdEdit size={12} />
-            </button>
-          </>
-        )}
-      </div>
-
       {/* encrypted / decrypted switcher */}
       <div className="flex items-center gap-3 mb-4">
         <div
@@ -191,7 +114,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
         </div>
 
         <button
-          onClick={() => fetchSDLogs(sdMode)}
+          onClick={fetchSDLogs}
           disabled={sdLoading}
           className="flex items-center gap-2 px-4 py-2 rounded-sm font-mono-ig text-xs font-bold tracking-widest transition-all"
           style={{
@@ -210,12 +133,12 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
                   borderTopColor: "#00D4FF",
                 }}
               />
-              READING LOG...
+              LOADING...
             </>
           ) : (
             <>
               <MdSdCard size={13} />
-              {sdLoaded ? "REFRESH" : "READ LOG"}
+              {sdLoaded ? "REFRESH" : "LOAD LOG"}
             </>
           )}
         </button>
@@ -237,7 +160,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
             {sdMode === "raw" ? "RAW ENCRYPTED HEX" : "DECRYPTED ENTRIES"}
           </span>
           <span className="font-mono-ig text-xs" style={{ color: "#E8EDF220" }}>
-            SD card or LittleFS black-box
+            Synced from ESP32 black-box
           </span>
         </div>
 
@@ -251,10 +174,10 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
               className="font-mono-ig text-xs tracking-widest"
               style={{ color: "#E8EDF230" }}
             >
-              PRESS READ LOG TO LOAD
+              PRESS LOAD LOG
             </p>
             <p className="font-mono-ig text-xs" style={{ color: "#E8EDF220" }}>
-              Data is fetched directly from the ESP32 over WiFi
+              Data comes from the cloud, so this works from any device
             </p>
           </div>
         )}
@@ -275,10 +198,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
               className="font-mono-ig text-xs tracking-widest"
               style={{ color: "#E8EDF230" }}
             >
-              READING FROM ESP32...
-            </p>
-            <p className="font-mono-ig text-xs" style={{ color: "#E8EDF220" }}>
-              Fetching via HTTP from {sdIp}
+              LOADING BLACK-BOX LOG...
             </p>
           </div>
         )}
@@ -293,7 +213,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
               className="font-mono-ig text-xs tracking-widest"
               style={{ color: "#EF4444" }}
             >
-              CONNECTION FAILED
+              COULD NOT LOAD
             </p>
             <p
               className="font-mono-ig text-xs text-center max-w-sm"
@@ -302,7 +222,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
               {sdError}
             </p>
             <button
-              onClick={() => fetchSDLogs(sdMode)}
+              onClick={fetchSDLogs}
               className="mt-2 px-4 py-1.5 rounded-sm font-mono-ig text-xs font-bold tracking-wider"
               style={{
                 backgroundColor: "#00D4FF15",
@@ -325,7 +245,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
               className="font-mono-ig text-xs tracking-widest"
               style={{ color: "#E8EDF230" }}
             >
-              LOG IS EMPTY
+              NO ENTRIES SYNCED YET
             </p>
           </div>
         )}
@@ -337,7 +257,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
           >
             {sdLogs.map((entry, i) => (
               <div
-                key={i}
+                key={entry._id || i}
                 className="flex items-start gap-4 px-4 py-2 border-b transition-colors"
                 style={{ borderColor: "#0F264430" }}
                 onMouseEnter={(e) =>
@@ -351,7 +271,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
                   className="font-mono-ig text-xs w-8 shrink-0 pt-0.5"
                   style={{ color: "#E8EDF220" }}
                 >
-                  {String(entry.index + 1).padStart(3, "0")}
+                  {String(i + 1).padStart(3, "0")}
                 </span>
                 <p
                   className="font-mono-ig text-xs flex-1 leading-relaxed break-all"
@@ -360,7 +280,7 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
                     letterSpacing: sdMode === "raw" ? "0.05em" : "normal",
                   }}
                 >
-                  {entry.line}
+                  {sdMode === "raw" ? entry.encrypted : entry.decrypted}
                 </p>
               </div>
             ))}
@@ -368,20 +288,19 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
         )}
       </div>
 
-      {/* summary */}
       {sdLoaded && !sdLoading && (
         <div className="flex items-center justify-between mt-3 px-1">
           <span
             className="font-mono-ig text-xs tracking-wider"
             style={{ color: "#E8EDF230" }}
           >
-            {sdLogs.length} entr{sdLogs.length !== 1 ? "ies" : "y"} read
+            {sdLogs.length} entr{sdLogs.length !== 1 ? "ies" : "y"} synced
           </span>
           <span
             className="font-mono-ig text-xs tracking-widest"
             style={{ color: "#E8EDF215" }}
           >
-            ESP32 · XOR ENCRYPTED
+            ESP32 · XOR ENCRYPTED · CLOUD SYNCED
           </span>
         </div>
       )}
@@ -390,4 +309,3 @@ const SdCardLogs = ({ setSdLogs, sdLogs }) => {
 };
 
 export default SdCardLogs;
-
