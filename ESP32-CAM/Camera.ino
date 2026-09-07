@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <HTTPClient.h>
 
 // ===========================
 // Select camera model in board_config.h
@@ -10,11 +11,16 @@
 // ===========================
 // Enter your WiFi credentials
 // ===========================
-const char *ssid = "";
-const char *password = "";
+const char *ssid = "Tae";
+const char *password = "qqqqqqqq90qq90";
 
-void startCameraServer();
-void setupLedFlash();
+// Render backend — same server the main board already talks to
+const char *serverUrl = "https://intelliguard-1.onrender.com/api/camera/frame";
+
+// How often to capture + push a frame. 1500ms keeps bandwidth and
+// Render request volume reasonable while still feeling near-live.
+const unsigned long FRAME_INTERVAL_MS = 1500;
+unsigned long lastFrameSent = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -41,32 +47,23 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.frame_size = FRAMESIZE_UXGA;
-  config.pixel_format = PIXFORMAT_JPEG;  // for streaming
-  //config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
+  config.pixel_format = PIXFORMAT_JPEG;
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.jpeg_quality = 12;
   config.fb_count = 1;
 
-  // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
-  //                      for larger pre-allocated frame buffer.
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    if (psramFound()) {
-      config.jpeg_quality = 10;
-      config.fb_count = 2;
-      config.grab_mode = CAMERA_GRAB_LATEST;
-    } else {
-      // Limit the frame size when PSRAM is not available
-      config.frame_size = FRAMESIZE_SVGA;
-      config.fb_location = CAMERA_FB_IN_DRAM;
-    }
-  } else {
-    // Best option for face detection/recognition
-    config.frame_size = FRAMESIZE_240X240;
-#if CONFIG_IDF_TARGET_ESP32S3
+  // Keep frames small — this goes over the internet on every push,
+  // not just your local network, so QVGA/quality 12 keeps it fast
+  // and avoids maxing out Render's free-tier bandwidth.
+  config.frame_size = FRAMESIZE_QVGA;
+
+  if (psramFound()) {
+    config.jpeg_quality = 10;
     config.fb_count = 2;
-#endif
+    config.grab_mode = CAMERA_GRAB_LATEST;
+  } else {
+    config.fb_location = CAMERA_FB_IN_DRAM;
   }
 
 #if defined(CAMERA_MODEL_ESP_EYE)
@@ -74,7 +71,6 @@ void setup() {
   pinMode(14, INPUT_PULLUP);
 #endif
 
-  // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
@@ -82,29 +78,19 @@ void setup() {
   }
 
   sensor_t *s = esp_camera_sensor_get();
-  // initial sensors are flipped vertically and colors are a bit saturated
   if (s->id.PID == OV3660_PID) {
-    s->set_vflip(s, 1);        // flip it back
-    s->set_brightness(s, 1);   // up the brightness just a bit
-    s->set_saturation(s, -2);  // lower the saturation
+    s->set_vflip(s, 1);
+    s->set_brightness(s, 1);
+    s->set_saturation(s, -2);
   }
-  // drop down frame size for higher initial frame rate
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    s->set_framesize(s, FRAMESIZE_QVGA);
-  }
+  s->set_framesize(s, FRAMESIZE_QVGA);
 
 #if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
   s->set_vflip(s, 1);
   s->set_hmirror(s, 1);
 #endif
-
 #if defined(CAMERA_MODEL_ESP32S3_EYE)
   s->set_vflip(s, 1);
-#endif
-
-// Setup LED FLash if LED pin is defined in camera_pins.h
-#if defined(LED_GPIO_NUM)
-  setupLedFlash();
 #endif
 
   WiFi.begin(ssid, password);
@@ -117,15 +103,51 @@ void setup() {
   }
   Serial.println("");
   Serial.println("WiFi connected");
+  Serial.print("Device IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println("Pushing frames to: " + String(serverUrl));
+}
 
-  startCameraServer();
+void pushFrame() {
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    return;
+  }
 
-  Serial.print("Camera Ready! Use 'http://");
-  Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
+  HTTPClient http;
+  if (!http.begin(serverUrl)) {
+    Serial.println("ERROR — Could not reach server");
+    esp_camera_fb_return(fb);
+    return;
+  }
+
+  http.addHeader("Content-Type", "image/jpeg");
+  http.setTimeout(8000);
+
+  int code = http.POST(fb->buf, fb->len);
+
+  if (code == 201) {
+    Serial.println("Frame sent — " + String(fb->len) + " bytes");
+  } else if (code < 0) {
+    Serial.println("ERROR — Server unreachable: " + http.errorToString(code));
+  } else {
+    Serial.println("WARNING — Unexpected response: " + String(code));
+  }
+
+  http.end();
+  esp_camera_fb_return(fb);
 }
 
 void loop() {
-  // Do nothing. Everything is done in another task by the web server
-  delay(10000);
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(ssid, password);
+    delay(2000);
+    return;
+  }
+
+  if (millis() - lastFrameSent >= FRAME_INTERVAL_MS) {
+    lastFrameSent = millis();
+    pushFrame();
+  }
 }
