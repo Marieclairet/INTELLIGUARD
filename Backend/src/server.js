@@ -4,12 +4,22 @@ import cookieParser from "cookie-parser";
 import { DB_connect } from "./config/db.js";
 import router from "./routes/userRouters.js";
 import eRouter from "./routes/eventRoutes.js";
+import bRouter from "./routes/blackboxRoutes.js";
+import cRouter from "./routes/cameraRoutes.js";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 
 dotenv.config();
 
 const app = express();
+
+// Camera route needs raw binary bodies, not JSON — must be registered
+// BEFORE express.json() and scoped only to /api/camera/frame so it
+// doesn't change body parsing for every other route.
+app.use(
+  "/api/camera/frame",
+  express.raw({ type: "image/jpeg", limit: "2mb" }),
+);
 
 app.use(express.json());
 
@@ -78,32 +88,33 @@ const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // Skip rate limiting for ESP32 — it has no Origin header
-    // and sends frequent legitimate event POSTs
     return !req.headers.origin;
   },
 });
 
 const eventPollLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 60, // generous — covers 3s polling from several tabs/users at once
+  windowMs: 1 * 60 * 1000,
+  max: 60,
   message: {
     message: "Too many requests. Please slow down.",
   },
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    return !req.headers.origin; // still skip for ESP32
+    return !req.headers.origin;
   },
 });
 
 app.use("/api/event", eventPollLimiter);
+app.use("/api/blackbox", eventPollLimiter);
 app.use("/api/user/login", loginLimiter);
 app.use("/api/user/update", pinChangeLimiter);
 
 // ── ROUTES ─────────────────────────────────────────────────
 app.use("/api/user", router);
 app.use("/api/event", eRouter);
+app.use("/api/blackbox", bRouter);
+app.use("/api/camera", cRouter);
 
 const PORT = process.env.PORT || 4000;
 
