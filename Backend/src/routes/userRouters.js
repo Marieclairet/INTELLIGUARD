@@ -92,6 +92,48 @@ router.put("/update/:id", async (req, res) => {
   }
 });
 
+// ── EMERGENCY PIN RESET ──────────────────────────────────────
+// For when you've genuinely forgotten the PIN and can't use /update
+// (which requires knowing the current one). Guarded by a server-side
+// secret that only you know — set MAINTENANCE_SECRET on Render and
+// never expose it in the frontend. Call this with curl/Postman only:
+//
+//   curl -X POST https://intelliguard-1.onrender.com/api/user/emergency-reset \
+//     -H "Content-Type: application/json" \
+//     -H "x-maintenance-secret: <your MAINTENANCE_SECRET value>" \
+//     -d '{"newPin":"123456"}'
+//
+// If MAINTENANCE_SECRET isn't set on Render, this route always refuses —
+// so it can't be misused just by guessing.
+router.post("/emergency-reset", async (req, res) => {
+  const providedSecret = req.headers["x-maintenance-secret"];
+  const realSecret = process.env.MAINTENANCE_SECRET;
+
+  if (!realSecret || providedSecret !== realSecret) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  const { newPin } = req.body;
+  if (!/^\d{6}$/.test(newPin)) {
+    return res.status(400).json({ message: "PIN must be exactly 6 digits" });
+  }
+
+  try {
+    const hashedPin = await bcrypt.hash(newPin, 10);
+    const existing = await Code.findOne();
+
+    if (existing) {
+      await Code.findByIdAndUpdate(existing._id, { pin: hashedPin });
+    } else {
+      await new Code({ pin: hashedPin }).save();
+    }
+
+    res.status(200).json({ message: "PIN reset successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Internal error", error: error.message });
+  }
+});
+
 router.post("/logout", (req, res) => {
   try {
     res.clearCookie("refreshToken", {
