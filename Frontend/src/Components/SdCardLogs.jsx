@@ -2,7 +2,7 @@ import axios from "axios";
 import { useCallback, useState } from "react";
 import { MdSdCard } from "react-icons/md";
 
-const SD_CARD_IP = "http://172.20.10.3:4001";
+const SD_CARD_IP = "http://192.168.148.132:4001";
 
 const SdCardLogs = ({ setSdLogs, sdLogs }) => {
   const [sdMode, setSdMode] = useState("decrypted");
