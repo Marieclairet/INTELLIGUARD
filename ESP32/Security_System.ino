@@ -9,13 +9,14 @@
 #include <ESP32Servo.h>
 #include <Keypad.h>
 #include <SD.h>
+#include <LittleFS.h>
 
 // ================= LCD =================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // ================= WIFI =================
-const char* ssid = "";
-const char* pass = "";
+const char* ssid = "Tae";
+const char* pass = "qqqqqqqq90qq90";
 
 // ================= TIME =================
 const char* ntpServer = "pool.ntp.org";
@@ -30,6 +31,16 @@ MFRC522 rfid(SS_PIN, RST_PIN);
 // ================= SD =================
 #define SD_CS 4
 bool sdAvailable = false;
+
+// ================= LITTLEFS (BLACK-BOX FALLBACK + OFFLINE CLOUD QUEUE) =================
+bool fsAvailable = false;
+const char* BLACKBOX_FILE  = "/blackbox_log.txt";      // used only when SD is unavailable
+const char* QUEUE_FILE     = "/pending_events.txt";    // cloud-event retry queue
+const char* QUEUE_TMP_FILE = "/pending_events.tmp";
+
+// ---- NEW: cloud black-box sync queue (separate from the two above) ----
+const char* BB_QUEUE_FILE     = "/blackbox_cloud_queue.txt";
+const char* BB_QUEUE_TMP_FILE = "/blackbox_cloud_queue.tmp";
 
 // ================= HARDWARE =================
 #define PIR_PIN    36
@@ -91,34 +102,98 @@ String xorDecrypt(String hex) {
   return result;
 }
 
+// ================= BLACK-BOX LOG DUMP (SD if present, else LittleFS) =================
 void dumpLog() {
-  if (!sdAvailable) { Serial.println("[INTELLIGUARD] No SD card available"); return; }
-  File f = SD.open("/log.txt", FILE_READ);
-  if (!f) { Serial.println("[INTELLIGUARD] Could not open log file"); return; }
-  Serial.println("============ INTELLIGUARD SD LOG (DECRYPTED) ============");
-  int lineCount = 0;
-  while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    if (line.length() > 0) { Serial.println(xorDecrypt(line)); lineCount++; }
+  if (sdAvailable) {
+    File f = SD.open("/log.txt", FILE_READ);
+    if (!f) { Serial.println("[INTELLIGUARD] Could not open log file"); return; }
+    Serial.println("============ INTELLIGUARD SD LOG (DECRYPTED) ============");
+    int lineCount = 0;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() > 0) { Serial.println(xorDecrypt(line)); lineCount++; }
+    }
+    f.close();
+    Serial.println("============ END OF LOG — " + String(lineCount) + " ENTRIES ============");
+    return;
   }
-  f.close();
-  Serial.println("============ END OF LOG — " + String(lineCount) + " ENTRIES ============");
+  if (fsAvailable) {
+    File f = LittleFS.open(BLACKBOX_FILE, FILE_READ);
+    if (!f) { Serial.println("[INTELLIGUARD] No black-box log found"); return; }
+    Serial.println("============ INTELLIGUARD BLACK-BOX LOG (DECRYPTED, LittleFS) ============");
+    int lineCount = 0;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() > 0) { Serial.println(xorDecrypt(line)); lineCount++; }
+    }
+    f.close();
+    Serial.println("============ END OF LOG — " + String(lineCount) + " ENTRIES ============");
+    return;
+  }
+  Serial.println("[INTELLIGUARD] No log storage available (no SD card, no LittleFS)");
 }
 
 void dumpLogRaw() {
-  if (!sdAvailable) { Serial.println("[INTELLIGUARD] No SD card available"); return; }
-  File f = SD.open("/log.txt", FILE_READ);
-  if (!f) { Serial.println("[INTELLIGUARD] Could not open log file"); return; }
-  Serial.println("============ INTELLIGUARD SD LOG (ENCRYPTED) ============");
-  int lineCount = 0;
+  if (sdAvailable) {
+    File f = SD.open("/log.txt", FILE_READ);
+    if (!f) { Serial.println("[INTELLIGUARD] Could not open log file"); return; }
+    Serial.println("============ INTELLIGUARD SD LOG (ENCRYPTED) ============");
+    int lineCount = 0;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() > 0) { Serial.println(line); lineCount++; }
+    }
+    f.close();
+    Serial.println("============ END OF ENCRYPTED LOG — " + String(lineCount) + " ENTRIES ============");
+    return;
+  }
+  if (fsAvailable) {
+    File f = LittleFS.open(BLACKBOX_FILE, FILE_READ);
+    if (!f) { Serial.println("[INTELLIGUARD] No black-box log found"); return; }
+    Serial.println("============ INTELLIGUARD BLACK-BOX LOG (ENCRYPTED, LittleFS) ============");
+    int lineCount = 0;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() > 0) { Serial.println(line); lineCount++; }
+    }
+    f.close();
+    Serial.println("============ END OF ENCRYPTED LOG — " + String(lineCount) + " ENTRIES ============");
+    return;
+  }
+  Serial.println("[INTELLIGUARD] No log storage available (no SD card, no LittleFS)");
+}
+
+int countQueuedEvents() {
+  if (!fsAvailable || !LittleFS.exists(QUEUE_FILE)) return 0;
+  File f = LittleFS.open(QUEUE_FILE, FILE_READ);
+  if (!f) return 0;
+  int count = 0;
   while (f.available()) {
     String line = f.readStringUntil('\n');
     line.trim();
-    if (line.length() > 0) { Serial.println(line); lineCount++; }
+    if (line.length() > 0) count++;
   }
   f.close();
-  Serial.println("============ END OF ENCRYPTED LOG — " + String(lineCount) + " ENTRIES ============");
+  return count;
+}
+
+// ---- NEW: count entries waiting to sync to the cloud black-box ----
+int countQueuedBlackbox() {
+  if (!fsAvailable || !LittleFS.exists(BB_QUEUE_FILE)) return 0;
+  File f = LittleFS.open(BB_QUEUE_FILE, FILE_READ);
+  if (!f) return 0;
+  int count = 0;
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) count++;
+  }
+  f.close();
+  return count;
 }
 
 // ================= STATE MACHINE =================
@@ -148,6 +223,7 @@ unsigned long pinDelayUntil      = 0;
 // ================= MISC =================
 unsigned long lastWifiCheck  = 0;
 bool wifiReconnecting        = false;
+bool logServerStarted        = false;
 int ledMode                  = 0;
 unsigned long lastBlink      = 0;
 bool ledState                = false;
@@ -202,6 +278,204 @@ void setLED(int mode) {
   if (mode == 2) digitalWrite(LED_PIN, HIGH);
 }
 
+// ================= OFFLINE CLOUD-EVENT QUEUE (LITTLEFS) =================
+void queueEvent(String message, String type) {
+  if (!fsAvailable) {
+    systemPrint("ERROR — LittleFS unavailable, offline event dropped: " + message);
+    return;
+  }
+  File f = LittleFS.open(QUEUE_FILE, FILE_APPEND);
+  if (!f) {
+    systemPrint("ERROR — Could not open offline queue file");
+    return;
+  }
+  String safeMsg = message;
+  safeMsg.replace("|", " ");
+  String line = type + "|" + safeMsg;
+  f.println(xorEncrypt(line));
+  f.close();
+  systemPrint("Event queued offline (no WiFi): " + message);
+}
+
+bool postEvent(String message, String type) {
+  HTTPClient http;
+  String serverUrl = "https://intelliguard-1.onrender.com/api/event";
+
+  if (!http.begin(serverUrl)) {
+    systemPrint("ERROR — Could not reach server");
+    return false;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(10000);
+
+  String msg = message;
+  msg.replace("\"", "'");
+  String payload = "{\"message\":\"" + msg + "\",\"type\":\"" + type + "\"}";
+
+  int code = http.POST(payload);
+  bool ok = (code == 201);
+
+  if (ok) {
+    systemPrint("EVENT SENT — " + message);
+  } else if (code < 0) {
+    systemPrint("ERROR — Server unreachable (" + http.errorToString(code) + ")");
+  } else {
+    systemPrint("WARNING — Unexpected server response: " + String(code));
+  }
+
+  http.end();
+  return ok;
+}
+
+void syncPendingEvents() {
+  if (!fsAvailable) return;
+  if (!LittleFS.exists(QUEUE_FILE)) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  File f = LittleFS.open(QUEUE_FILE, FILE_READ);
+  if (!f) return;
+
+  File tmp = LittleFS.open(QUEUE_TMP_FILE, FILE_WRITE);
+  if (!tmp) { f.close(); return; }
+
+  int total = 0, sent = 0;
+
+  while (f.available()) {
+    String encLine = f.readStringUntil('\n');
+    encLine.trim();
+    if (encLine.length() == 0) continue;
+    total++;
+
+    String line = xorDecrypt(encLine);
+    int sep = line.indexOf('|');
+    if (sep == -1) continue;
+    String type    = line.substring(0, sep);
+    String message = line.substring(sep + 1);
+
+    if (postEvent(message, type)) {
+      sent++;
+    } else {
+      tmp.println(encLine);  // keep encrypted line for next retry
+    }
+  }
+
+  f.close();
+  tmp.close();
+
+  LittleFS.remove(QUEUE_FILE);
+  LittleFS.rename(QUEUE_TMP_FILE, QUEUE_FILE);
+
+  if (sent > 0) {
+    systemPrint("Synced " + String(sent) + " of " + String(total) + " queued offline event(s)");
+  }
+
+  File check = LittleFS.open(QUEUE_FILE, FILE_READ);
+  if (check) {
+    bool empty = (check.size() == 0);
+    check.close();
+    if (empty) LittleFS.remove(QUEUE_FILE);
+  }
+}
+
+// ---- NEW: queue a black-box entry for cloud sync ----
+// Stores BOTH the encrypted and plaintext forms so the cloud copy
+// can offer the same encrypted/decrypted toggle as the local dump,
+// with zero decryption logic needed on the server or frontend.
+void queueBlackboxCloud(String plainLine) {
+  if (!fsAvailable) return;
+
+  String safePlain = plainLine;
+  safePlain.replace("|", "/"); // keep the delimiter unambiguous
+
+  String encHex = xorEncrypt(plainLine);
+
+  File f = LittleFS.open(BB_QUEUE_FILE, FILE_APPEND);
+  if (!f) {
+    systemPrint("ERROR — Could not open black-box cloud queue file");
+    return;
+  }
+  f.println(encHex + "|" + safePlain);
+  f.close();
+}
+
+// ---- NEW: push queued black-box entries to Render ----
+void syncBlackboxCloud() {
+  if (!fsAvailable) return;
+  if (!LittleFS.exists(BB_QUEUE_FILE)) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  File f = LittleFS.open(BB_QUEUE_FILE, FILE_READ);
+  if (!f) return;
+
+  File tmp = LittleFS.open(BB_QUEUE_TMP_FILE, FILE_WRITE);
+  if (!tmp) { f.close(); return; }
+
+  int total = 0, sent = 0;
+
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+    total++;
+
+    int sep = line.indexOf('|');
+    if (sep == -1) continue;
+    String encHex = line.substring(0, sep);
+    String plain  = line.substring(sep + 1);
+
+    HTTPClient http;
+    String url = "https://intelliguard-1.onrender.com/api/blackbox";
+    bool sentOk = false;
+
+    if (http.begin(url)) {
+      http.addHeader("Content-Type", "application/json");
+      http.setTimeout(8000);
+
+      String safePlain = plain;
+      safePlain.replace("\"", "'");
+
+      String payload = "{\"encrypted\":\"" + encHex + "\",\"decrypted\":\"" + safePlain + "\"}";
+      int code = http.POST(payload);
+      http.end();
+      sentOk = (code == 201);
+    }
+
+    if (sentOk) {
+      sent++;
+    } else {
+      tmp.println(line); // keep for next retry
+    }
+  }
+
+  f.close();
+  tmp.close();
+
+  LittleFS.remove(BB_QUEUE_FILE);
+  LittleFS.rename(BB_QUEUE_TMP_FILE, BB_QUEUE_FILE);
+
+  if (sent > 0) {
+    systemPrint("Synced " + String(sent) + " of " + String(total) + " black-box entries to cloud");
+  }
+
+  File check = LittleFS.open(BB_QUEUE_FILE, FILE_READ);
+  if (check) {
+    bool empty = (check.size() == 0);
+    check.close();
+    if (empty) LittleFS.remove(BB_QUEUE_FILE);
+  }
+}
+
+void sendEvent(String message, String type) {
+  if (WiFi.status() != WL_CONNECTED) {
+    queueEvent(message, type);
+    return;
+  }
+  if (!postEvent(message, type)) {
+    queueEvent(message, type);
+  }
+}
+
 void checkWifi() {
   if (millis() - lastWifiCheck < 10000) return;
   lastWifiCheck = millis();
@@ -214,8 +488,12 @@ void checkWifi() {
     } else {
       if (WiFi.status() == WL_CONNECTED) {
         systemPrint("WiFi reconnected successfully");
+        systemPrint("Device IP  : " + WiFi.localIP().toString());
         wifiReconnecting = false;
         configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+        if (sdAvailable || fsAvailable) setupSDServer();
+        syncPendingEvents();
+        syncBlackboxCloud();   // ---- NEW ----
       }
     }
   } else {
@@ -223,50 +501,24 @@ void checkWifi() {
   }
 }
 
+// ================= BLACK-BOX WRITE (SD primary, LittleFS fallback) =================
 void safeLog(String data) {
-  if (!sdAvailable) return;
-  File f = SD.open("/log.txt", FILE_APPEND);
-  if (f) { f.println(data); f.flush(); f.close(); }
+  if (sdAvailable) {
+    File f = SD.open("/log.txt", FILE_APPEND);
+    if (f) { f.println(data); f.flush(); f.close(); }
+    return;
+  }
+  if (fsAvailable) {
+    File f = LittleFS.open(BLACKBOX_FILE, FILE_APPEND);
+    if (f) { f.println(data); f.close(); }
+  }
 }
 
 void logEvent(String msg) {
   String line = "[" + eventTime + "] " + msg + " [THREAT:" + threatLabel + "]";
   Serial.println(line);
   safeLog(xorEncrypt(line));
-}
-
-// ================= HTTP EVENT SENDER =================
-void sendEvent(String message, String type) {
-  if (WiFi.status() != WL_CONNECTED) {
-    systemPrint("WARNING — No WiFi, event not sent: " + message);
-    return;
-  }
-
-  HTTPClient http;
-  String serverUrl = "http://172.20.10.5:4000/api/event";
-
-  bool began = http.begin(serverUrl);
-  if (!began) {
-    systemPrint("ERROR — Could not reach server");
-    return;
-  }
-
-  http.addHeader("Content-Type", "application/json");
-  http.setTimeout(5000);
-  message.replace("\"", "'");
-  String payload = "{\"message\":\"" + message + "\",\"type\":\"" + type + "\"}";
-
-  int code = http.POST(payload);
-
-  if (code == 201) {
-    systemPrint("EVENT SENT — " + message);
-  } else if (code < 0) {
-    systemPrint("ERROR — Server unreachable (" + http.errorToString(code) + ")");
-  } else {
-    systemPrint("WARNING — Unexpected server response: " + String(code));
-  }
-
-  http.end();
+  queueBlackboxCloud(line);   // ---- NEW ----
 }
 
 void classifyThreat() {
@@ -288,6 +540,7 @@ void classifyThreat() {
     String line = "[" + eventTime + "] THREAT LEVEL CHANGED TO: " + threatLabel;
     Serial.println(line);
     safeLog(xorEncrypt(line));
+    queueBlackboxCloud(line);   // ---- NEW ----
     if (currentThreat == THREAT_NORMAL)     sendEvent("All clear — threat level returned to normal", "ok");
     if (currentThreat == THREAT_SUSPICIOUS) sendEvent("Suspicious activity detected — monitoring elevated", "warn");
     if (currentThreat == THREAT_INTRUSION)  sendEvent("Intrusion alert — immediate attention required", "danger");
@@ -385,6 +638,7 @@ bool isValidCard(String uid) {
   return false;
 }
 
+// ================= SERIAL COMMAND CONSOLE =================
 void checkSerialCommands() {
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
@@ -398,8 +652,11 @@ void checkSerialCommands() {
       if (sdAvailable) {
         SD.remove("/log.txt");
         Serial.println("[INTELLIGUARD] SD log file cleared successfully");
+      } else if (fsAvailable) {
+        LittleFS.remove(BLACKBOX_FILE);
+        Serial.println("[INTELLIGUARD] Black-box log (LittleFS) cleared successfully");
       } else {
-        Serial.println("[INTELLIGUARD] No SD card available");
+        Serial.println("[INTELLIGUARD] No log storage available");
       }
     } else if (cmd == "STATUS") {
       String stateStr = "";
@@ -409,25 +666,33 @@ void checkSerialCommands() {
       else if (state == S_GRANTED) stateStr = "Access granted — door open";
       else                          stateStr = "Booting";
       Serial.println("============ INTELLIGUARD STATUS ============");
-      Serial.println("  System  : " + stateStr);
-      Serial.println("  Threat  : " + threatLabel);
-      Serial.println("  Time    : " + getTimeNow());
-      Serial.println("  WiFi    : " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
-      Serial.println("  SD Card : " + String(sdAvailable ? "Ready" : "Not found"));
-      Serial.println("  Tamper  : " + String(tamperActive ? "ALERT — Enclosure open" : "Secure"));
-      Serial.println("  RFID    : " + String(rfidFail) + " fail(s)");
-      Serial.println("  PIN     : " + String(pinFail) + " fail(s)");
+      Serial.println("  System   : " + stateStr);
+      Serial.println("  Threat   : " + threatLabel);
+      Serial.println("  Time     : " + getTimeNow());
+      Serial.println("  WiFi     : " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
+      Serial.println("  Server   : https://intelliguard-1.onrender.com");
+      Serial.println("  SD Card  : " + String(sdAvailable ? "Ready" : "Not found"));
+      Serial.println("  LittleFS : " + String(fsAvailable ? "Ready (fallback black-box + cloud queue)" : "Not found"));
+      Serial.println("  Queued   : " + String(countQueuedEvents()) + " offline event(s) pending sync");
+      Serial.println("  BB Queue : " + String(countQueuedBlackbox()) + " black-box entries pending cloud sync");
+      Serial.println("  Tamper   : " + String(tamperActive ? "ALERT — Enclosure open" : "Secure"));
+      Serial.println("  RFID     : " + String(rfidFail) + " fail(s)");
+      Serial.println("  PIN      : " + String(pinFail) + " fail(s)");
       Serial.println("=============================================");
     } else if (cmd == "TESTHTTP") {
       Serial.println("[INTELLIGUARD] Sending test event to server...");
       sendEvent("Manual test event from serial console", "ok");
+    } else if (cmd == "SYNCBB") {
+      Serial.println("[INTELLIGUARD] Forcing black-box cloud sync...");
+      syncBlackboxCloud();
     } else if (cmd == "HELP") {
       Serial.println("============ INTELLIGUARD COMMANDS ============");
-      Serial.println("  DUMP     — View decrypted SD card log");
-      Serial.println("  DUMPRAW  — View encrypted SD card log");
+      Serial.println("  DUMP     — View decrypted event log (SD card or LittleFS black-box)");
+      Serial.println("  DUMPRAW  — View encrypted event log (SD card or LittleFS black-box)");
       Serial.println("  STATUS   — Show current system status");
-      Serial.println("  CLEAR    — Erase SD card log file");
+      Serial.println("  CLEAR    — Erase event log (SD card or LittleFS black-box)");
       Serial.println("  TESTHTTP — Send a test event to the server");
+      Serial.println("  SYNCBB   — Force black-box cloud sync now");
       Serial.println("  HELP     — Show this help menu");
       Serial.println("===============================================");
     } else {
@@ -436,61 +701,97 @@ void checkSerialCommands() {
   }
 }
 
-// ================= SD CARD HTTP SERVER =================
+// ================= SD/LITTLEFS LOG HTTP SERVER (for dashboard) =================
 void handleSDLog() {
   String mode = sdServer.arg("mode");
-  if (!sdAvailable) {
-    sdServer.sendHeader("Access-Control-Allow-Origin", "*");
-    sdServer.send(404, "application/json", "{\"error\":\"No SD card available\"}");
-    return;
-  }
-  File f = SD.open("/log.txt", FILE_READ);
-  if (!f) {
-    sdServer.sendHeader("Access-Control-Allow-Origin", "*");
-    sdServer.send(404, "application/json", "{\"error\":\"Log file not found or empty\"}");
-    return;
-  }
-  String json = "[";
-  bool first = true;
-  int lineCount = 0;
-  while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) continue;
-    if (!first) json += ",";
-    first = false;
-    String content = "";
-    if (mode == "decrypted") {
-      content = xorDecrypt(line);
-    } else {
-      content = line;
+
+  if (sdAvailable) {
+    File f = SD.open("/log.txt", FILE_READ);
+    if (!f) {
+      sdServer.sendHeader("Access-Control-Allow-Origin", "*");
+      sdServer.send(404, "application/json", "{\"error\":\"Log file not found or empty\"}");
+      return;
     }
-    content.replace("\"", "'");
-    content.replace("\\", "/");
-    json += "{\"line\":\"" + content + "\",\"index\":" + String(lineCount) + "}";
-    lineCount++;
-    if (json.length() > 8000) {
+    String json = "[";
+    bool first = true;
+    int lineCount = 0;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
       if (!first) json += ",";
-      json += "{\"line\":\"... log truncated — too large to display in full ...\",\"index\":" + String(lineCount) + "}";
-      break;
+      first = false;
+      String content = (mode == "decrypted") ? xorDecrypt(line) : line;
+      content.replace("\"", "'");
+      content.replace("\\", "/");
+      json += "{\"line\":\"" + content + "\",\"index\":" + String(lineCount) + "}";
+      lineCount++;
+      if (json.length() > 8000) {
+        if (!first) json += ",";
+        json += "{\"line\":\"... log truncated — too large to display in full ...\",\"index\":" + String(lineCount) + "}";
+        break;
+      }
     }
+    f.close();
+    json += "]";
+    sdServer.sendHeader("Access-Control-Allow-Origin", "*");
+    sdServer.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    sdServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+    sdServer.send(200, "application/json", json);
+    systemPrint("SD log served via HTTP — mode: " + mode + " — " + String(lineCount) + " entries");
+    return;
   }
-  f.close();
-  json += "]";
+
+  if (fsAvailable) {
+    File f = LittleFS.open(BLACKBOX_FILE, FILE_READ);
+    if (!f) {
+      sdServer.sendHeader("Access-Control-Allow-Origin", "*");
+      sdServer.send(404, "application/json", "{\"error\":\"No black-box log found\"}");
+      return;
+    }
+    String json = "[";
+    bool first = true;
+    int lineCount = 0;
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+      if (!first) json += ",";
+      first = false;
+      String content = (mode == "decrypted") ? xorDecrypt(line) : line;
+      content.replace("\"", "'");
+      content.replace("\\", "/");
+      json += "{\"line\":\"" + content + "\",\"index\":" + String(lineCount) + "}";
+      lineCount++;
+      if (json.length() > 8000) {
+        if (!first) json += ",";
+        json += "{\"line\":\"... log truncated — too large to display in full ...\",\"index\":" + String(lineCount) + "}";
+        break;
+      }
+    }
+    f.close();
+    json += "]";
+    sdServer.sendHeader("Access-Control-Allow-Origin", "*");
+    sdServer.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    sdServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+    sdServer.send(200, "application/json", json);
+    systemPrint("Black-box log (LittleFS) served via HTTP — mode: " + mode + " — " + String(lineCount) + " entries");
+    return;
+  }
+
   sdServer.sendHeader("Access-Control-Allow-Origin", "*");
-  sdServer.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  sdServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-  sdServer.send(200, "application/json", json);
-  systemPrint("SD log served via HTTP — mode: " + mode + " — " + String(lineCount) + " entries");
+  sdServer.send(404, "application/json", "{\"error\":\"No log storage available\"}");
 }
 
 void handleSDStatus() {
   sdServer.sendHeader("Access-Control-Allow-Origin", "*");
   sdServer.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   sdServer.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-  String json = "{\"available\":" + String(sdAvailable ? "true" : "false") +
+  bool logAvailable = sdAvailable || fsAvailable;
+  String json = "{\"available\":" + String(logAvailable ? "true" : "false") +
+                ",\"source\":\"" + String(sdAvailable ? "sd" : (fsAvailable ? "littlefs" : "none")) + "\"" +
                 ",\"ip\":\"" + WiFi.localIP().toString() + "\"" +
-                ",\"entries\":" + String(sdAvailable ? "true" : "false") + "}";
+                ",\"entries\":" + String(logAvailable ? "true" : "false") + "}";
   sdServer.send(200, "application/json", json);
 }
 
@@ -502,12 +803,14 @@ void handleOptions() {
 }
 
 void setupSDServer() {
+  if (logServerStarted) return;
   sdServer.on("/sdlog", HTTP_GET, handleSDLog);
   sdServer.on("/sdlog", HTTP_OPTIONS, handleOptions);
   sdServer.on("/sdstatus", HTTP_GET, handleSDStatus);
   sdServer.on("/sdstatus", HTTP_OPTIONS, handleOptions);
   sdServer.begin();
-  systemPrint("SD card HTTP server running on port 4001");
+  logServerStarted = true;
+  systemPrint("Log HTTP server running on port 4001 (source: " + String(sdAvailable ? "SD card" : "LittleFS black-box") + ")");
   systemPrint("Test: http://" + WiFi.localIP().toString() + ":4001/sdstatus");
 }
 
@@ -544,18 +847,35 @@ void setup() {
   if (SD.begin(SD_CS)) {
     sdAvailable = true;
     Serial.println("[INTELLIGUARD] SD card ready");
-    Serial.println("[INTELLIGUARD] Type HELP in serial for available commands");
   } else {
     sdAvailable = false;
-    Serial.println("[INTELLIGUARD] WARNING — No SD card found, logging to serial only");
+    Serial.println("[INTELLIGUARD] WARNING — No SD card found, will use LittleFS black-box fallback");
   }
+
+  if (LittleFS.begin(true)) {
+    fsAvailable = true;
+    Serial.println("[INTELLIGUARD] LittleFS ready (black-box fallback + offline cloud queue)");
+    int pending = countQueuedEvents();
+    if (pending > 0) {
+      Serial.println("[INTELLIGUARD] " + String(pending) + " offline event(s) waiting from before reboot");
+    }
+    int pendingBB = countQueuedBlackbox();
+    if (pendingBB > 0) {
+      Serial.println("[INTELLIGUARD] " + String(pendingBB) + " black-box entries waiting to sync to cloud");
+    }
+  } else {
+    fsAvailable = false;
+    Serial.println("[INTELLIGUARD] ERROR — LittleFS mount failed");
+  }
+
+  Serial.println("[INTELLIGUARD] Type HELP in serial for available commands");
 
   showLCD("CONNECTING...", "PLEASE WAIT");
   WiFi.begin(ssid, pass);
 
   Serial.println("[INTELLIGUARD] Connecting to WiFi...");
   int tries = 0;
-  while (WiFi.status() != WL_CONNECTED && tries < 30) {
+  while (WiFi.status() != WL_CONNECTED && tries < 60) {
     delay(300);
     tries++;
   }
@@ -580,13 +900,18 @@ void setup() {
     }
     if (!timeSynced) Serial.println("[INTELLIGUARD] WARNING — Time sync failed, will retry");
 
-    if (sdAvailable) setupSDServer();
+    if (sdAvailable || fsAvailable) setupSDServer();
+
+    syncPendingEvents();
+    syncBlackboxCloud();   // ---- NEW ----
 
   } else {
     Serial.println("[INTELLIGUARD] WARNING — WiFi connection failed, time unavailable");
   }
 
-  if (!sdAvailable) { showLCD("WARNING", "NO SD CARD"); delay(2000); }
+  // LCD stays silent about storage backend here — SD vs LittleFS is an
+  // internal implementation detail, not a fault condition, so it never
+  // interrupts the boot sequence with a warning screen.
 
   forceLCD("WELCOME", "SCAN YOUR CARD");
 
