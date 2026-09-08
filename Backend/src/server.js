@@ -17,10 +17,9 @@ const app = express();
 // BEFORE express.json() and scoped only to /api/camera/frame so it
 // doesn't change body parsing for every other route.
 app.use(
-  "/api/camera/frame",
+  ["/api/camera/frame", "/api/camera/snapshot"],
   express.raw({ type: "image/jpeg", limit: "2mb" }),
 );
-
 app.use(express.json());
 
 app.use(
