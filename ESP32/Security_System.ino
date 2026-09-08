@@ -38,7 +38,7 @@ const char* BLACKBOX_FILE  = "/blackbox_log.txt";      // used only when SD is u
 const char* QUEUE_FILE     = "/pending_events.txt";    // cloud-event retry queue
 const char* QUEUE_TMP_FILE = "/pending_events.tmp";
 
-// ---- NEW: cloud black-box sync queue (separate from the two above) ----
+// ================= BLACK-BOX CLOUD SYNC (LITTLEFS) =================
 const char* BB_QUEUE_FILE     = "/blackbox_cloud_queue.txt";
 const char* BB_QUEUE_TMP_FILE = "/blackbox_cloud_queue.tmp";
 
@@ -170,21 +170,6 @@ void dumpLogRaw() {
 int countQueuedEvents() {
   if (!fsAvailable || !LittleFS.exists(QUEUE_FILE)) return 0;
   File f = LittleFS.open(QUEUE_FILE, FILE_READ);
-  if (!f) return 0;
-  int count = 0;
-  while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    if (line.length() > 0) count++;
-  }
-  f.close();
-  return count;
-}
-
-// ---- NEW: count entries waiting to sync to the cloud black-box ----
-int countQueuedBlackbox() {
-  if (!fsAvailable || !LittleFS.exists(BB_QUEUE_FILE)) return 0;
-  File f = LittleFS.open(BB_QUEUE_FILE, FILE_READ);
   if (!f) return 0;
   int count = 0;
   while (f.available()) {
@@ -378,10 +363,20 @@ void syncPendingEvents() {
   }
 }
 
-// ---- NEW: queue a black-box entry for cloud sync ----
-// Stores BOTH the encrypted and plaintext forms so the cloud copy
-// can offer the same encrypted/decrypted toggle as the local dump,
-// with zero decryption logic needed on the server or frontend.
+void sendEvent(String message, String type) {
+  if (WiFi.status() != WL_CONNECTED) {
+    queueEvent(message, type);
+    return;
+  }
+  if (!postEvent(message, type)) {
+    queueEvent(message, type);
+  }
+}
+
+// ================= BLACK-BOX CLOUD SYNC =================
+// Queues a black-box line (both encrypted and plaintext forms) so the
+// dashboard's SD Card Logs tab can show it via the Render backend —
+// no local IP / same-network requirement, works from anywhere.
 void queueBlackboxCloud(String plainLine) {
   if (!fsAvailable) return;
 
@@ -399,7 +394,6 @@ void queueBlackboxCloud(String plainLine) {
   f.close();
 }
 
-// ---- NEW: push queued black-box entries to Render ----
 void syncBlackboxCloud() {
   if (!fsAvailable) return;
   if (!LittleFS.exists(BB_QUEUE_FILE)) return;
@@ -466,16 +460,6 @@ void syncBlackboxCloud() {
   }
 }
 
-void sendEvent(String message, String type) {
-  if (WiFi.status() != WL_CONNECTED) {
-    queueEvent(message, type);
-    return;
-  }
-  if (!postEvent(message, type)) {
-    queueEvent(message, type);
-  }
-}
-
 void checkWifi() {
   if (millis() - lastWifiCheck < 10000) return;
   lastWifiCheck = millis();
@@ -493,7 +477,7 @@ void checkWifi() {
         configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
         if (sdAvailable || fsAvailable) setupSDServer();
         syncPendingEvents();
-        syncBlackboxCloud();   // ---- NEW ----
+        syncBlackboxCloud();
       }
     }
   } else {
@@ -518,7 +502,7 @@ void logEvent(String msg) {
   String line = "[" + eventTime + "] " + msg + " [THREAT:" + threatLabel + "]";
   Serial.println(line);
   safeLog(xorEncrypt(line));
-  queueBlackboxCloud(line);   // ---- NEW ----
+  queueBlackboxCloud(line);
 }
 
 void classifyThreat() {
@@ -540,7 +524,7 @@ void classifyThreat() {
     String line = "[" + eventTime + "] THREAT LEVEL CHANGED TO: " + threatLabel;
     Serial.println(line);
     safeLog(xorEncrypt(line));
-    queueBlackboxCloud(line);   // ---- NEW ----
+    queueBlackboxCloud(line);
     if (currentThreat == THREAT_NORMAL)     sendEvent("All clear — threat level returned to normal", "ok");
     if (currentThreat == THREAT_SUSPICIOUS) sendEvent("Suspicious activity detected — monitoring elevated", "warn");
     if (currentThreat == THREAT_INTRUSION)  sendEvent("Intrusion alert — immediate attention required", "danger");
@@ -639,6 +623,7 @@ bool isValidCard(String uid) {
 }
 
 // ================= SERIAL COMMAND CONSOLE =================
+// Documented command set (Section 4.7): HELP, STATUS, DUMP, DUMPRAW, CLEAR, TESTHTTP
 void checkSerialCommands() {
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
@@ -674,7 +659,6 @@ void checkSerialCommands() {
       Serial.println("  SD Card  : " + String(sdAvailable ? "Ready" : "Not found"));
       Serial.println("  LittleFS : " + String(fsAvailable ? "Ready (fallback black-box + cloud queue)" : "Not found"));
       Serial.println("  Queued   : " + String(countQueuedEvents()) + " offline event(s) pending sync");
-      Serial.println("  BB Queue : " + String(countQueuedBlackbox()) + " black-box entries pending cloud sync");
       Serial.println("  Tamper   : " + String(tamperActive ? "ALERT — Enclosure open" : "Secure"));
       Serial.println("  RFID     : " + String(rfidFail) + " fail(s)");
       Serial.println("  PIN      : " + String(pinFail) + " fail(s)");
@@ -682,9 +666,6 @@ void checkSerialCommands() {
     } else if (cmd == "TESTHTTP") {
       Serial.println("[INTELLIGUARD] Sending test event to server...");
       sendEvent("Manual test event from serial console", "ok");
-    } else if (cmd == "SYNCBB") {
-      Serial.println("[INTELLIGUARD] Forcing black-box cloud sync...");
-      syncBlackboxCloud();
     } else if (cmd == "HELP") {
       Serial.println("============ INTELLIGUARD COMMANDS ============");
       Serial.println("  DUMP     — View decrypted event log (SD card or LittleFS black-box)");
@@ -692,7 +673,6 @@ void checkSerialCommands() {
       Serial.println("  STATUS   — Show current system status");
       Serial.println("  CLEAR    — Erase event log (SD card or LittleFS black-box)");
       Serial.println("  TESTHTTP — Send a test event to the server");
-      Serial.println("  SYNCBB   — Force black-box cloud sync now");
       Serial.println("  HELP     — Show this help menu");
       Serial.println("===============================================");
     } else {
@@ -701,7 +681,7 @@ void checkSerialCommands() {
   }
 }
 
-// ================= SD/LITTLEFS LOG HTTP SERVER (for dashboard) =================
+// ================= SD/LITTLEFS LOG HTTP SERVER (for dashboard, local-network fallback only) =================
 void handleSDLog() {
   String mode = sdServer.arg("mode");
 
@@ -859,10 +839,6 @@ void setup() {
     if (pending > 0) {
       Serial.println("[INTELLIGUARD] " + String(pending) + " offline event(s) waiting from before reboot");
     }
-    int pendingBB = countQueuedBlackbox();
-    if (pendingBB > 0) {
-      Serial.println("[INTELLIGUARD] " + String(pendingBB) + " black-box entries waiting to sync to cloud");
-    }
   } else {
     fsAvailable = false;
     Serial.println("[INTELLIGUARD] ERROR — LittleFS mount failed");
@@ -903,7 +879,7 @@ void setup() {
     if (sdAvailable || fsAvailable) setupSDServer();
 
     syncPendingEvents();
-    syncBlackboxCloud();   // ---- NEW ----
+    syncBlackboxCloud();
 
   } else {
     Serial.println("[INTELLIGUARD] WARNING — WiFi connection failed, time unavailable");
